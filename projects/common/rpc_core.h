@@ -173,14 +173,12 @@ private:
     void ListenLoop();
     void ProcessMessage(std::span<const char> buffer);
     void SendRPCMessage(const std::vector<char>& buffer);
-    template<class F, class... Args>
-    void EnqueueTask(F&& f, Args&&... args);
+    void _StartThreadPool();
 
     RpcValue InternalCall(RpcObjectId objId, RpcFunctionEnum funcId, const std::vector<RpcValue>& args);
 
     std::string pipe_name_;
     bool is_server_ = false;
-    std::unique_ptr<std::thread> listen_thread_;
     std::atomic<bool> running_ = false;
 
     CircularBuffer* pC2S_Buffer_ = nullptr;
@@ -200,11 +198,8 @@ private:
     std::atomic<uint32_t> next_call_id_{1};
 
     // --- Thread Pool for handling calls ---
+    size_t num_threads_ = 6;
     std::vector<std::thread> worker_threads_;
-    std::queue<std::function<void()>> tasks_;
-    std::mutex thread_pool_mutex_;
-    std::condition_variable thread_pool_cv_;
-    bool stop_thread_pool_ = false;
 };
 
 // --- RPC Object Base Class ---
@@ -276,13 +271,4 @@ RpcValue RpcSystem::_Call(RpcFunctionEnum funcId, Args... args) {
 template<typename... Args>
 RpcValue RpcSystem::_CallMethod(RpcObjectId objId, RpcFunctionEnum funcId, Args... args) {
     return InternalCall(objId, funcId, {RpcValue(args)...});
-}
-
-template<class F, class... Args>
-void RpcSystem::EnqueueTask(F&& f, Args&&... args) {
-    {
-        std::unique_lock<std::mutex> lock(thread_pool_mutex_);
-        tasks_.emplace(std::forward<F>(f));
-    }
-    thread_pool_cv_.notify_one();
 }

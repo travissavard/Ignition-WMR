@@ -41,8 +41,13 @@ bool mapped_event_circular_buffer_read(CircularBuffer* cb, char* data, size_t* s
     return reinterpret_cast<ignition::ipc::CircularBuffer*>(cb)->read(data, *size);
 }
 
+bool mapped_event_circular_buffer_wait_and_read(CircularBuffer* cb, char* data, size_t* size, uint32_t timeout_ms) {
+    return reinterpret_cast<ignition::ipc::CircularBuffer*>(cb)->wait_and_read(data, *size, timeout_ms);
+}
+
 void mapped_event_circular_buffer_wait_for_data(CircularBuffer* cb) {
     reinterpret_cast<ignition::ipc::CircularBuffer*>(cb)->wait_for_data();
 }
 
 }
+

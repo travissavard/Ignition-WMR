@@ -211,14 +211,10 @@ RpcSystem::~RpcSystem() {
 
 void RpcSystem::_Initialize(const std::string& ipcName) {
     pipe_name_ = ipcName;
-    next_object_id_ = 1;
-    next_call_id_ = 1;
     running_ = true;
 
     // Replace '.' with '_'
     std::replace(pipe_name_.begin(), pipe_name_.end(), '.', '_');
-
-    _InitializeThreadPool(5);
 }
 
 void RpcSystem::_Shutdown() {
@@ -227,14 +223,16 @@ void RpcSystem::_Shutdown() {
         return;
     }
     
-    // This unblocks listen_thread_
+    // Unblock waiting worker threads by sending N no-ops
     CircularBuffer* pReadBuffer = is_server_ ? pC2S_Buffer_ : pS2C_Buffer_;
-    char noop = 'N';
-    mapped_event_circular_buffer_write(pReadBuffer, &noop, 1);
-    
-    if (listen_thread_ && listen_thread_->joinable()) {
-        listen_thread_->join();
+    if (pReadBuffer) {
+        char noop = 'N';
+        for (size_t i = 0; i < worker_threads_.size(); ++i) {
+            mapped_event_circular_buffer_write(pReadBuffer, &noop, 1);
+        }
     }
+    
+    _ShutdownThreadPool();
 
     // Complete all pending calls
     {
@@ -246,8 +244,6 @@ void RpcSystem::_Shutdown() {
         }
         pending_calls_.clear();
     }
-
-    _ShutdownThreadPool();
 
     // Clean up shared memory resources
     mapped_event_circular_buffer_close_shm(pC2S_Buffer_);
@@ -263,34 +259,20 @@ void RpcSystem::_Shutdown() {
 }
 
 void RpcSystem::_InitializeThreadPool(size_t numThreads) {
-    stop_thread_pool_ = false;
-    for (size_t i = 0; i < numThreads; ++i) {
-        worker_threads_.emplace_back([this] {
-            while (true) {
-                std::function<void()> task;
-                {
-                    std::unique_lock<std::mutex> lock(thread_pool_mutex_);
-                    thread_pool_cv_.wait(lock, [this] { return stop_thread_pool_ || !tasks_.empty(); });
-                    if (stop_thread_pool_ && tasks_.empty()) {
-                        return;
-                    }
-                    task = std::move(tasks_.front());
-                    tasks_.pop();
-                }
-                task();
-            }
-        });
+    num_threads_ = numThreads;
+    if (running_ && _IsConnected()) {
+        _StartThreadPool();
+    }
+}
+
+void RpcSystem::_StartThreadPool() {
+    _ShutdownThreadPool();
+    for (size_t i = 0; i < num_threads_; ++i) {
+        worker_threads_.emplace_back(&RpcSystem::ListenLoop, this);
     }
 }
 
 void RpcSystem::_ShutdownThreadPool() {
-    {
-        std::unique_lock<std::mutex> lock(thread_pool_mutex_);
-        stop_thread_pool_ = true;
-    }
-
-    thread_pool_cv_.notify_all();
-
     for (std::thread& worker : worker_threads_) {
         if (worker.joinable()) {
             worker.join();
@@ -317,7 +299,7 @@ void RpcSystem::_CreateIPC() {
         throw std::runtime_error("Failed to create shared memory buffers.");
     }
 
-    listen_thread_ = std::make_unique<std::thread>(&RpcSystem::ListenLoop, this);
+    _StartThreadPool();
 }
 
 bool RpcSystem::_ConnectToExistingIPC() {
@@ -334,29 +316,28 @@ bool RpcSystem::_ConnectToExistingIPC() {
         return false;
     }
 
-    listen_thread_ = std::make_unique<std::thread>(&RpcSystem::ListenLoop, this);
+    _StartThreadPool();
     return true;
 }
 
 void RpcSystem::ListenLoop() {
     CircularBuffer* pReadBuffer = is_server_ ? pC2S_Buffer_ : pS2C_Buffer_;
+    if (!pReadBuffer) return;
 
-    static char message[SHM_BUFFER_SIZE];
+    std::vector<char> message(SHM_BUFFER_SIZE);
     
     while (running_) {
-        mapped_event_circular_buffer_wait_for_data(pReadBuffer);
+        size_t message_size = message.size();
+
+        if (!mapped_event_circular_buffer_wait_and_read(pReadBuffer, message.data(), &message_size, 100)) {
+            continue;
+        }
 
         if (!running_) {
             break;
         }
 
-        size_t message_size = SHM_BUFFER_SIZE;
-
-        while (mapped_event_circular_buffer_read(pReadBuffer, message, &message_size)) {
-            ProcessMessage(std::span<const char>(message, message_size));
-
-            message_size = SHM_BUFFER_SIZE;
-        }
+        ProcessMessage(std::span<const char>(message.data(), message_size));
     }
 }
 
@@ -395,42 +376,39 @@ void RpcSystem::ProcessMessage(std::span<const char> buffer) {
             args.push_back(RpcSerializer::Deserialize(ptr, endPtr));
         }
 
-        // Enqueue the task to be executed by the thread pool
-        EnqueueTask([this, objId, funcId, args, callId] {
-            RpcValue returnVal;
-            try {
-                if (objId == 0) { // Static function call
-                    RpcFunction func = _FindFunction(funcId);
-                    if (func) {
-                        returnVal = func(args);
-                    } else {
-                        throw std::runtime_error("Static function ID not found: " + std::to_string(funcId));
-                    }
+        RpcValue returnVal;
+        try {
+            if (objId == 0) { // Static function call
+                RpcFunction func = _FindFunction(funcId);
+                if (func) {
+                    returnVal = func(args);
                 } else {
-                    RpcObject* target_obj = _GetLocalObject(objId);
-                    if (!target_obj) {
-                        throw std::runtime_error("Target object not found: " + std::to_string(objId));
-                    }
-                    RpcFunction func = target_obj->FindFunction(funcId);
-                    if (func) {
-                        returnVal = func(args);
-                    } else {
-                         throw std::runtime_error("Method ID " + std::to_string(funcId) + " not found on object " + std::to_string(objId));
-                    }
+                    throw std::runtime_error("Static function ID not found: " + std::to_string(funcId));
                 }
-            } catch (const std::exception& e) {
-                std::cerr << "RPC Error on call to '" << funcId << "': " << e.what() << std::endl;
-                // returnVal is default-constructed (T_NULL)
+            } else {
+                RpcObject* target_obj = _GetLocalObject(objId);
+                if (!target_obj) {
+                    throw std::runtime_error("Target object not found: " + std::to_string(objId));
+                }
+                RpcFunction func = target_obj->FindFunction(funcId);
+                if (func) {
+                    returnVal = func(args);
+                } else {
+                     throw std::runtime_error("Method ID " + std::to_string(funcId) + " not found on object " + std::to_string(objId));
+                }
             }
+        } catch (const std::exception& e) {
+            std::cerr << "RPC Error on call to '" << funcId << "': " << e.what() << std::endl;
+            // returnVal is default-constructed (T_NULL)
+        }
 
-            std::vector<char> returnBuffer;
-            char returnMsgType = 'R'; // 'R' for Return
-            returnBuffer.push_back(returnMsgType);
-            returnBuffer.insert(returnBuffer.end(), reinterpret_cast<const char*>(&callId), reinterpret_cast<const char*>(&callId) + sizeof(callId));
-            RpcSerializer::Serialize(returnBuffer, returnVal);
+        std::vector<char> returnBuffer;
+        char returnMsgType = 'R'; // 'R' for Return
+        returnBuffer.push_back(returnMsgType);
+        returnBuffer.insert(returnBuffer.end(), reinterpret_cast<const char*>(&callId), reinterpret_cast<const char*>(&callId) + sizeof(callId));
+        RpcSerializer::Serialize(returnBuffer, returnVal);
 
-            SendRPCMessage(returnBuffer);
-        });
+        SendRPCMessage(returnBuffer);
 
     } else if (msgType == 'A') { // Ack
         uint32_t pingId;

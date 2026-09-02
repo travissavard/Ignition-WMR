@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 
 #ifdef _WIN32
@@ -33,9 +34,13 @@ public:
 
     bool write(const char* data, size_t size);
     bool read(char* data, size_t& size);
+    bool wait_and_read(char* data, size_t& size, uint32_t timeout_ms = (uint32_t)-1);
 
-    void wait_for_data();
+    bool wait_for_data(uint32_t timeout_ms = (uint32_t)-1);
 private:
+    bool read_nolock(char* data, size_t& size);
+    void signal();
+
 	std::string name_;
 	bool is_creator_ = false;
 #ifdef _WIN32
@@ -46,6 +51,7 @@ private:
 #endif
 	CircularBufferData* data_ = nullptr;
 	size_t buffer_size_ = 0;
+	std::mutex read_mutex_;
 };
 
 } // namespace ipc

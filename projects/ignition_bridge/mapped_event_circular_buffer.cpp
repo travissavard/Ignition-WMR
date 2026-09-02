@@ -235,19 +235,12 @@ bool CircularBuffer::write(const char* data, size_t size) {
 
 	data_->write_lock.clear(std::memory_order_release);
 
-#ifdef _WIN32
-	if (hDataAvailableEvent_) {
-		SetEvent(hDataAvailableEvent_);
-	}
-#else
-	__atomic_fetch_add(&data_->futex_seq, 1, __ATOMIC_RELEASE);
-	futex_wake(&data_->futex_seq, 1);
-#endif
+	signal();
 
 	return true;
 }
 
-bool CircularBuffer::read(char* data, size_t& size) {
+bool CircularBuffer::read_nolock(char* data, size_t& size) {
 	if (!data_ || !data) return false;
 
 	const size_t current_head = data_->head.load(std::memory_order_relaxed);
@@ -271,31 +264,76 @@ bool CircularBuffer::read(char* data, size_t& size) {
 	size = message_size;
 
 	data_->head.store(next_head, std::memory_order_release);
+
+	// If buffer still has data, signal again to wake another reader
+	if (data_->head.load(std::memory_order_relaxed) != data_->tail.load(std::memory_order_acquire)) {
+		signal();
+	}
+
 	return true;
 }
 
-void CircularBuffer::wait_for_data() {
-#ifdef _WIN32
-	if (hDataAvailableEvent_)
-		WaitForSingleObject(hDataAvailableEvent_, INFINITE);
-#else
-	if (!data_) return;
+bool CircularBuffer::read(char* data, size_t& size) {
+	std::lock_guard<std::mutex> lock(read_mutex_);
+	return read_nolock(data, size);
+}
+
+bool CircularBuffer::wait_for_data(uint32_t timeout_ms) {
+	if (!data_) return false;
 
 	while (data_->head.load(std::memory_order_relaxed) == data_->tail.load(std::memory_order_acquire)) {
+#ifdef _WIN32
+		if (!hDataAvailableEvent_) return false;
+		DWORD dwWait = WaitForSingleObject(hDataAvailableEvent_, timeout_ms);
+		if (dwWait != WAIT_OBJECT_0) {
+			return false;
+		}
+#else
 		uint32_t expected = __atomic_load_n(&data_->futex_seq, __ATOMIC_ACQUIRE);
-
-		// If we still have data, don't wait
 		if (data_->head.load(std::memory_order_relaxed) != data_->tail.load(std::memory_order_acquire)) {
 			break;
 		}
 
-		int ret = futex_wait(&data_->futex_seq, expected);
-		if (ret == -1 && (errno == EAGAIN || errno == EINTR)) {
-			continue;
+		struct timespec ts;
+		ts.tv_sec = timeout_ms / 1000;
+		ts.tv_nsec = (timeout_ms % 1000) * 1000000;
+
+		int ret = syscall(SYS_futex, &data_->futex_seq, FUTEX_WAIT, expected, timeout_ms == (uint32_t)-1 ? nullptr : &ts, nullptr, 0);
+		if (ret == -1) {
+			if (errno == ETIMEDOUT) {
+				return false;
+			}
+			if (errno == EAGAIN || errno == EINTR) {
+				continue;
+			}
+			return false;
 		}
+#endif
+	}
+	return true;
+}
+
+bool CircularBuffer::wait_and_read(char* data, size_t& size, uint32_t timeout_ms) {
+	std::unique_lock<std::mutex> lock(read_mutex_);
+	if (!wait_for_data(timeout_ms)) {
+		return false;
+	}
+	return read_nolock(data, size);
+}
+
+void CircularBuffer::signal() {
+#ifdef _WIN32
+	if (hDataAvailableEvent_) {
+		SetEvent(hDataAvailableEvent_);
+	}
+#else
+	if (data_) {
+		__atomic_fetch_add(&data_->futex_seq, 1, __ATOMIC_RELEASE);
+		futex_wake(&data_->futex_seq, 1);
 	}
 #endif
 }
 
 } // namespace ipc
 } // namespace ignition
+

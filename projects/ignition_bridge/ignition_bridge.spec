@@ -7,6 +7,7 @@
 
 @ cdecl mapped_event_circular_buffer_write(ptr ptr int64)
 @ cdecl mapped_event_circular_buffer_read(ptr ptr ptr)
+@ cdecl mapped_event_circular_buffer_wait_and_read(ptr ptr ptr long)
 
 @ cdecl mapped_event_circular_buffer_wait_for_data(ptr)
 
