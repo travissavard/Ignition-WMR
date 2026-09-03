@@ -1,6 +1,9 @@
 #pragma once
 
 #include "rpc_core.h"
+
+#include "distortion_grid_cache.h"
+
 #include <openvr_driver.h>
 #include <vr_blockqueue.h>
 
@@ -193,7 +196,11 @@ public:
 
 private:
     vr::IVRDisplayComponent* real_component_ = nullptr; // Only valid on the server
+
+    std::mutex distortion_mutex_;
+    ignition::DistortionGridCache<vr::DistortionCoordinates_t> distortion_cache_[2]; // Left (0) and Right (1)
 };
+
 
 // **************************************
 // RPC wrapper for vr::IVRCameraComponent
@@ -234,7 +241,11 @@ public:
 
 private:
     vr::IVRCameraComponent* real_component_ = nullptr; // Only valid on the server
+
+    std::mutex camera_distortion_mutex_;
+    std::map<uint32_t, ignition::DistortionGridCache<vr::HmdVector2_t>> camera_distortion_cache_;
 };
+
 
 // **********************************
 // RPC wrapper for vr::IVRDriverInput

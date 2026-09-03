@@ -86,6 +86,7 @@ enum RpcFunctionEnum : uint32_t
     RPCFunction_DisplayComponent_GetEyeOutputViewport,
     RPCFunction_DisplayComponent_GetProjectionRaw,
     RPCFunction_DisplayComponent_ComputeDistortion,
+    RPCFunction_DisplayComponent_ComputeDistortionGridBatch,
     RPCFunction_DisplayComponent_ComputeInverseDistortion,
 
     // IVRCameraComponent
@@ -104,6 +105,7 @@ enum RpcFunctionEnum : uint32_t
     RPCFunction_CameraComponent_PauseVideoStream,
     RPCFunction_CameraComponent_ResumeVideoStream,
     RPCFunction_CameraComponent_GetCameraDistortion,
+    RPCFunction_CameraComponent_GetCameraDistortionGridBatch,
     RPCFunction_CameraComponent_GetCameraProjection,
     RPCFunction_CameraComponent_SetFrameRate,
     RPCFunction_CameraComponent_SetCameraVideoSinkCallback,

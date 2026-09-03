@@ -74,6 +74,27 @@ RpcCameraComponent::RpcCameraComponent(vr::IVRCameraComponent* real) : RpcObject
             return RpcValue();
         });
 
+        this->RegisterFunction(RPCFunction_CameraComponent_GetCameraDistortionGridBatch, [this](const auto& args) {
+            uint32_t nCameraIndex = (uint32_t)args[0].asInt();
+            uint32_t resolution = (uint32_t)args[1].asInt();
+            if (resolution < 2) resolution = 64;
+
+            size_t total_points = resolution * resolution;
+            std::vector<vr::HmdVector2_t> results(total_points);
+
+            for (uint32_t j = 0; j < resolution; ++j) {
+                float fV = static_cast<float>(j) / static_cast<float>(resolution - 1);
+                for (uint32_t i = 0; i < resolution; ++i) {
+                    float fU = static_cast<float>(i) / static_cast<float>(resolution - 1);
+                    float out_u = 0.0f, out_v = 0.0f;
+                    this->GetCameraDistortion(nCameraIndex, fU, fV, &out_u, &out_v);
+                    results[j * resolution + i] = vr::HmdVector2_t{ { out_u, out_v } };
+                }
+            }
+
+            return RpcValue(reinterpret_cast<const char*>(results.data()), results.size() * sizeof(vr::HmdVector2_t));
+        });
+
         this->RegisterFunction(RPCFunction_CameraComponent_GetCameraProjection, [this](const auto& args) {
             vr::HmdMatrix44_t proj;
             if (this->GetCameraProjection((uint32_t)args[0].asInt(), (vr::EVRTrackedCameraFrameType)args[1].asInt(), args[2].asFloat(), args[3].asFloat(), &proj)) {
@@ -248,10 +269,36 @@ bool RpcCameraComponent::ResumeVideoStream() {
 
 bool RpcCameraComponent::GetCameraDistortion(uint32_t nCameraIndex, float flInputU, float flInputV, float *pflOutputU, float *pflOutputV) {
     if (IsProxy()) {
-        RpcValue result = RpcSystem::CallMethod(GetId(), RPCFunction_CameraComponent_GetCameraDistortion, RpcValue((int)nCameraIndex), RpcValue(flInputU), RpcValue(flInputV));
-        if (result.isByteArray() && result.asByteArray().size() == sizeof(float) * 2) {
-            const float* data = reinterpret_cast<const float*>(result.asByteArray().data());
-            *pflOutputU = data[0]; *pflOutputV = data[1];
+        if (!pflOutputU || !pflOutputV) return false;
+
+        std::lock_guard<std::mutex> lock(camera_distortion_mutex_);
+        vr::HmdVector2_t result{};
+        bool success = camera_distortion_cache_[nCameraIndex].GetOrFetch(
+            flInputU, flInputV, &result,
+            [this, nCameraIndex](float u, float v, vr::HmdVector2_t* out) {
+                RpcValue res = RpcSystem::CallMethod(GetId(), RPCFunction_CameraComponent_GetCameraDistortion,
+                    RpcValue((int)nCameraIndex), RpcValue(u), RpcValue(v));
+                if (res.isByteArray() && res.asByteArray().size() == sizeof(float) * 2) {
+                    const float* data = reinterpret_cast<const float*>(res.asByteArray().data());
+                    *out = vr::HmdVector2_t{ { data[0], data[1] } };
+                    return true;
+                }
+                return false;
+            },
+            [this, nCameraIndex](uint32_t res, std::vector<vr::HmdVector2_t>& batch) {
+                RpcValue r = RpcSystem::CallMethod(GetId(), RPCFunction_CameraComponent_GetCameraDistortionGridBatch,
+                    RpcValue((int)nCameraIndex), RpcValue((int)res));
+                size_t expected_size = res * res * sizeof(vr::HmdVector2_t);
+                if (r.isByteArray() && r.asByteArray().size() == expected_size) {
+                    batch.resize(res * res);
+                    std::memcpy(batch.data(), r.asByteArray().data(), expected_size);
+                    return true;
+                }
+                return false;
+            });
+        if (success) {
+            *pflOutputU = result.v[0];
+            *pflOutputV = result.v[1];
             return true;
         }
         return false;

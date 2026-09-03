@@ -45,6 +45,25 @@ RpcDisplayComponent::RpcDisplayComponent(vr::IVRDisplayComponent* real) : RpcObj
             vr::DistortionCoordinates_t coords = this->ComputeDistortion((vr::EVREye)args[0].asInt(), args[1].asFloat(), args[2].asFloat());
             return RpcValue((const char*)&coords, sizeof(coords));
         });
+
+        this->RegisterFunction(RPCFunction_DisplayComponent_ComputeDistortionGridBatch, [this](const auto& args) {
+            vr::EVREye eEye = (vr::EVREye)args[0].asInt();
+            uint32_t resolution = (uint32_t)args[1].asInt();
+            if (resolution < 2) resolution = 64;
+
+            size_t total_points = resolution * resolution;
+            std::vector<vr::DistortionCoordinates_t> results(total_points);
+
+            for (uint32_t j = 0; j < resolution; ++j) {
+                float fV = static_cast<float>(j) / static_cast<float>(resolution - 1);
+                for (uint32_t i = 0; i < resolution; ++i) {
+                    float fU = static_cast<float>(i) / static_cast<float>(resolution - 1);
+                    results[j * resolution + i] = this->ComputeDistortion(eEye, fU, fV);
+                }
+            }
+
+            return RpcValue(reinterpret_cast<const char*>(results.data()), results.size() * sizeof(vr::DistortionCoordinates_t));
+        });
         
         this->RegisterFunction(RPCFunction_DisplayComponent_ComputeInverseDistortion, [this](const auto& args) {
             vr::HmdVector2_t result;
@@ -128,11 +147,33 @@ void RpcDisplayComponent::GetProjectionRaw(vr::EVREye eEye, float *pfLeft, float
 
 vr::DistortionCoordinates_t RpcDisplayComponent::ComputeDistortion(vr::EVREye eEye, float fU, float fV) {
     if (IsProxy()) {
-        RpcValue result = RpcSystem::CallMethod(GetId(), RPCFunction_DisplayComponent_ComputeDistortion, RpcValue((int)eEye), RpcValue(fU), RpcValue(fV));
-        if (result.isByteArray() && result.asByteArray().size() == sizeof(vr::DistortionCoordinates_t)) {
-            return *reinterpret_cast<const vr::DistortionCoordinates_t*>(result.asByteArray().data());
-        }
-        return vr::DistortionCoordinates_t();
+        int eye_idx = (eEye == vr::Eye_Right) ? 1 : 0;
+        std::lock_guard<std::mutex> lock(distortion_mutex_);
+
+        vr::DistortionCoordinates_t result{};
+        distortion_cache_[eye_idx].GetOrFetch(
+            fU, fV, &result,
+            [this, eEye](float u, float v, vr::DistortionCoordinates_t* out) {
+                RpcValue res = RpcSystem::CallMethod(GetId(), RPCFunction_DisplayComponent_ComputeDistortion,
+                    RpcValue((int)eEye), RpcValue(u), RpcValue(v));
+                if (res.isByteArray() && res.asByteArray().size() == sizeof(vr::DistortionCoordinates_t)) {
+                    *out = *reinterpret_cast<const vr::DistortionCoordinates_t*>(res.asByteArray().data());
+                    return true;
+                }
+                return false;
+            },
+            [this, eEye](uint32_t res, std::vector<vr::DistortionCoordinates_t>& batch) {
+                RpcValue r = RpcSystem::CallMethod(GetId(), RPCFunction_DisplayComponent_ComputeDistortionGridBatch,
+                    RpcValue((int)eEye), RpcValue((int)res));
+                size_t expected_size = res * res * sizeof(vr::DistortionCoordinates_t);
+                if (r.isByteArray() && r.asByteArray().size() == expected_size) {
+                    batch.resize(res * res);
+                    std::memcpy(batch.data(), r.asByteArray().data(), expected_size);
+                    return true;
+                }
+                return false;
+            });
+        return result;
     }
     else {
         return real_component_->ComputeDistortion(eEye, fU, fV);
