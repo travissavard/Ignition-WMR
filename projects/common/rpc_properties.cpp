@@ -227,36 +227,36 @@ vr::ETrackedPropertyError RpcProperties::WritePropertyBatch(vr::PropertyContaine
         std::vector<char> buffer;
         buffer.insert(buffer.end(), (char*)&unBatchEntryCount, (char*)&unBatchEntryCount + sizeof(uint32_t));
         for (uint32_t i = 0; i < unBatchEntryCount; ++i) {
-            
-            if (pBatch[i].pvBuffer && pBatch[i].unBufferSize > 0) {
-                char* bufferStart = (char*)pBatch[i].pvBuffer;
-                char* bufferEnd = bufferStart + pBatch[i].unBufferSize;
-#ifdef _WIN32
-                std::string unix_path; // Needs to persist until contents are written to buffer
-                if (pBatch[i].prop == vr::ETrackedDeviceProperty::Prop_UserConfigPath_String
-                    || pBatch[i].prop == vr::ETrackedDeviceProperty::Prop_InstallPath_String
-                    || pBatch[i].prop == vr::ETrackedDeviceProperty::Prop_DriverProvidedChaperonePath_String) {
-                    if (IsRunningInWine()) {
-                        // Turn Windows (DOS) path into Unix path that Linux SteamVR expects
-                        std::string path_str(bufferStart, pBatch[i].unBufferSize);
-                        unix_path = WineGetUnixFileName(path_str);
+            bool validBuffer = pBatch[i].unBufferSize > 0;
 
-                        // Append null terminator
-                        unix_path.push_back('\0');
-                        
-                        bufferStart = (char*)unix_path.c_str();
-                        bufferEnd = bufferStart + unix_path.size();
-                    }
+            char* bufferStart = validBuffer ? (char*)pBatch[i].pvBuffer : nullptr;
+            char* bufferEnd = validBuffer ? (bufferStart + pBatch[i].unBufferSize) : nullptr;
+
+#ifdef _WIN32
+            std::string unix_path; // Needs to persist until contents are written to buffer
+            if (validBuffer && (pBatch[i].prop == vr::ETrackedDeviceProperty::Prop_UserConfigPath_String
+                || pBatch[i].prop == vr::ETrackedDeviceProperty::Prop_InstallPath_String
+                || pBatch[i].prop == vr::ETrackedDeviceProperty::Prop_DriverProvidedChaperonePath_String)) {
+                if (IsRunningInWine()) {
+                    // Turn Windows (DOS) path into Unix path that Linux SteamVR expects
+                    std::string path_str(bufferStart, pBatch[i].unBufferSize);
+                    unix_path = WineGetUnixFileName(path_str);
+
+                    // Append null terminator
+                    unix_path.push_back('\0');
+                    
+                    bufferStart = (char*)unix_path.c_str();
+                    bufferEnd = bufferStart + unix_path.size();
                 }
-#endif
-                uint32_t bufferSize = bufferEnd - bufferStart;
-                
-                buffer.insert(buffer.end(), (char*)&pBatch[i].prop, (char*)&pBatch[i].prop + sizeof(vr::ETrackedDeviceProperty));
-                buffer.insert(buffer.end(), (char*)&pBatch[i].writeType, (char*)&pBatch[i].writeType + sizeof(vr::EPropertyWriteType));
-                buffer.insert(buffer.end(), (char*)&pBatch[i].unTag, (char*)&pBatch[i].unTag + sizeof(vr::PropertyTypeTag_t));
-                buffer.insert(buffer.end(), (char*)&bufferSize, (char*)&bufferSize + sizeof(uint32_t));
-                buffer.insert(buffer.end(), bufferStart, bufferEnd);
             }
+#endif
+            uint32_t finalBufferSize = static_cast<uint32_t>(bufferEnd - bufferStart);
+            
+            buffer.insert(buffer.end(), (char*)&pBatch[i].prop, (char*)&pBatch[i].prop + sizeof(vr::ETrackedDeviceProperty));
+            buffer.insert(buffer.end(), (char*)&pBatch[i].writeType, (char*)&pBatch[i].writeType + sizeof(vr::EPropertyWriteType));
+            buffer.insert(buffer.end(), (char*)&pBatch[i].unTag, (char*)&pBatch[i].unTag + sizeof(vr::PropertyTypeTag_t));
+            buffer.insert(buffer.end(), (char*)&finalBufferSize, (char*)&finalBufferSize + sizeof(uint32_t));
+            buffer.insert(buffer.end(), bufferStart, bufferEnd);
         }
 
         RpcValue result = RpcSystem::CallMethod(GetId(), RPCFunction_Properties_WritePropertyBatch, RpcValue(ulContainerHandle), RpcValue(buffer.data(), buffer.size()));
