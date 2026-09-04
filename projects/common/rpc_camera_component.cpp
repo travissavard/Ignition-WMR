@@ -269,36 +269,10 @@ bool RpcCameraComponent::ResumeVideoStream() {
 
 bool RpcCameraComponent::GetCameraDistortion(uint32_t nCameraIndex, float flInputU, float flInputV, float *pflOutputU, float *pflOutputV) {
     if (IsProxy()) {
-        if (!pflOutputU || !pflOutputV) return false;
-
-        std::lock_guard<std::mutex> lock(camera_distortion_mutex_);
-        vr::HmdVector2_t result{};
-        bool success = camera_distortion_cache_[nCameraIndex].GetOrFetch(
-            flInputU, flInputV, &result,
-            [this, nCameraIndex](float u, float v, vr::HmdVector2_t* out) {
-                RpcValue res = RpcSystem::CallMethod(GetId(), RPCFunction_CameraComponent_GetCameraDistortion,
-                    RpcValue((int)nCameraIndex), RpcValue(u), RpcValue(v));
-                if (res.isByteArray() && res.asByteArray().size() == sizeof(float) * 2) {
-                    const float* data = reinterpret_cast<const float*>(res.asByteArray().data());
-                    *out = vr::HmdVector2_t{ { data[0], data[1] } };
-                    return true;
-                }
-                return false;
-            },
-            [this, nCameraIndex](uint32_t res, std::vector<vr::HmdVector2_t>& batch) {
-                RpcValue r = RpcSystem::CallMethod(GetId(), RPCFunction_CameraComponent_GetCameraDistortionGridBatch,
-                    RpcValue((int)nCameraIndex), RpcValue((int)res));
-                size_t expected_size = res * res * sizeof(vr::HmdVector2_t);
-                if (r.isByteArray() && r.asByteArray().size() == expected_size) {
-                    batch.resize(res * res);
-                    std::memcpy(batch.data(), r.asByteArray().data(), expected_size);
-                    return true;
-                }
-                return false;
-            });
-        if (success) {
-            *pflOutputU = result.v[0];
-            *pflOutputV = result.v[1];
+        RpcValue result = RpcSystem::CallMethod(GetId(), RPCFunction_CameraComponent_GetCameraDistortion, RpcValue((int)nCameraIndex), RpcValue(flInputU), RpcValue(flInputV));
+        if (result.isByteArray() && result.asByteArray().size() == sizeof(float) * 2) {
+            const float* data = reinterpret_cast<const float*>(result.asByteArray().data());
+            *pflOutputU = data[0]; *pflOutputV = data[1];
             return true;
         }
         return false;
