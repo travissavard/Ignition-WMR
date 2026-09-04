@@ -143,8 +143,11 @@ RpcCameraComponent::RpcCameraComponent(vr::IVRCameraComponent* real) : RpcObject
             return RpcValue();
         });
 
-        // Stubs for currently unsupported methods
-        this->RegisterFunction(RPCFunction_CameraComponent_SetCameraFrameBuffering, [](const auto& args){ return RpcValue(0); });
+        this->RegisterFunction(RPCFunction_CameraComponent_SetCameraFrameBuffering, [this](const auto& args) {
+            int count = args[0].asInt();
+            uint32_t size = args[1].isUint64() ? (uint32_t)args[1].asUint64() : (uint32_t)args[1].asInt();
+            return RpcValue((int)this->SetCameraFrameBuffering(count, nullptr, size));
+        });
         this->RegisterFunction(RPCFunction_CameraComponent_GetVideoStreamFrame, [](const auto& args){ return RpcValue(); });
         this->RegisterFunction(RPCFunction_CameraComponent_ReleaseVideoStreamFrame, [](const auto& args){ return RpcValue(); });
         this->RegisterFunction(RPCFunction_CameraComponent_SetCameraVideoSinkCallback, [](const auto& args){ return RpcValue(0); });
@@ -218,11 +221,30 @@ bool RpcCameraComponent::IsVideoStreamActive(bool *pbPaused, float *pflElapsedTi
 }
 
 bool RpcCameraComponent::SetCameraFrameBuffering(int nFrameBufferCount, void **ppFrameBuffers, uint32_t nFrameBufferDataSize) {
-    // Stub: This is too complex to marshal over RPC. Frame buffers are memory regions that would need to be shared.
-    // Also may not be used at all?
-
-    std::cout << "Warning: SetCameraFrameBuffering called on RPC proxy, but this is a stub." << std::endl;
-    return false;
+    if (IsProxy()) {
+        RpcValue result = RpcSystem::CallMethod(GetId(), RPCFunction_CameraComponent_SetCameraFrameBuffering, RpcValue(nFrameBufferCount), RpcValue((uint64_t)nFrameBufferDataSize));
+        return result.asInt() != 0;
+    }
+    else {
+        if (nFrameBufferCount > 0 && nFrameBufferDataSize > 0) {
+            void** buffers_to_pass = ppFrameBuffers;
+            if (!buffers_to_pass) {
+                server_frame_buffers_.resize(nFrameBufferCount);
+                server_frame_buffer_ptrs_.resize(nFrameBufferCount);
+                for (int i = 0; i < nFrameBufferCount; ++i) {
+                    server_frame_buffers_[i].assign(nFrameBufferDataSize, 0);
+                    server_frame_buffer_ptrs_[i] = server_frame_buffers_[i].data();
+                }
+                buffers_to_pass = server_frame_buffer_ptrs_.data();
+            }
+            return real_component_->SetCameraFrameBuffering(nFrameBufferCount, buffers_to_pass, nFrameBufferDataSize);
+        }
+        else {
+            server_frame_buffers_.clear();
+            server_frame_buffer_ptrs_.clear();
+            return real_component_->SetCameraFrameBuffering(0, nullptr, 0);
+        }
+    }
 }
 
 bool RpcCameraComponent::SetCameraVideoStreamFormat(vr::ECameraVideoStreamFormat nVideoStreamFormat) {

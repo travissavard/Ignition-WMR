@@ -244,6 +244,9 @@ private:
 
     std::mutex camera_distortion_mutex_;
     std::map<uint32_t, ignition::DistortionGridCache<vr::HmdVector2_t>> camera_distortion_cache_;
+
+    std::vector<std::vector<char>> server_frame_buffers_;
+    std::vector<void*> server_frame_buffer_ptrs_;
 };
 
 
