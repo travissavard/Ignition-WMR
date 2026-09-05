@@ -14,12 +14,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
       - name: Cache xwin MSVC SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.xwin-cache
           key: ${{ runner.os }}-xwin-msvc-v1
@@ -69,7 +69,7 @@ jobs:
           cmake --build build --config Release
 
       - name: Upload build package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Ignition-Linux-Windows
           path: build/Ignition-Linux-Windows
