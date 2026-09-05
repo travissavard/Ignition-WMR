@@ -19,6 +19,7 @@ jobs:
           submodules: recursive
 
       - name: Cache xwin MSVC SDK
+        id: xwin-cache
         uses: actions/cache@v6
         with:
           path: ~/.xwin-cache
@@ -56,6 +57,7 @@ jobs:
           tool: xwin
 
       - name: Run xwin splat
+        if: steps.xwin-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.xwin-cache
           xwin --accept-license --cache-dir ~/.xwin-cache/dl splat --output ~/.xwin-cache/splat
