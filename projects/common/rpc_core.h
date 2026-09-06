@@ -1,18 +1,18 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <span>
-#include <map>
-#include <functional>
-#include <memory>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <atomic>
-#include <queue>
-#include <utility>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <functional>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <span>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 #include "rpc_enums.h"
 
@@ -116,9 +116,19 @@ public:
     template<typename... Args>
     static RpcValue Call(RpcFunctionEnum funcId, Args... args) { return GetInstance()._Call(funcId, args...); }
 
+    template<typename... Args>
+    static RpcValue CallWithTimeout(RpcFunctionEnum funcId, std::chrono::milliseconds timeout, Args... args) {
+        return GetInstance()._CallWithTimeout(funcId, timeout, args...);
+    }
+
     // Call a remote method on an object.
     template<typename... Args>
     static RpcValue CallMethod(RpcObjectId objId, RpcFunctionEnum funcId, Args... args) { return GetInstance()._CallMethod(objId, funcId, args...); }
+
+    template<typename... Args>
+    static RpcValue CallMethodWithTimeout(RpcObjectId objId, RpcFunctionEnum funcId, std::chrono::milliseconds timeout, Args... args) {
+        return GetInstance()._CallMethodWithTimeout(objId, funcId, timeout, args...);
+    }
 
     static bool IsAlive() { return GetInstance()._IsAlive(); }
 
@@ -151,9 +161,10 @@ private:
     void _Initialize(const std::string& ipcName);
     void _InitializeThreadPool(size_t num_threads);
     template<typename T> void _RegisterRPCClass();
-    template<typename... Args> RpcValue _Call(const std::string& funcName, Args... args);
     template<typename... Args> RpcValue _Call(RpcFunctionEnum funcId, Args... args);
+    template<typename... Args> RpcValue _CallWithTimeout(RpcFunctionEnum funcId, std::chrono::milliseconds timeout, Args... args);
     template<typename... Args> RpcValue _CallMethod(RpcObjectId objId, RpcFunctionEnum funcId, Args... args);
+    template<typename... Args> RpcValue _CallMethodWithTimeout(RpcObjectId objId, RpcFunctionEnum funcId, std::chrono::milliseconds timeout, Args... args);
     void _CreateIPC();
     bool _ConnectToExistingIPC();
     void _Shutdown();
@@ -175,7 +186,7 @@ private:
     void SendRPCMessage(const std::vector<char>& buffer);
     void _StartThreadPool();
 
-    RpcValue InternalCall(RpcObjectId objId, RpcFunctionEnum funcId, const std::vector<RpcValue>& args);
+    RpcValue InternalCall(RpcObjectId objId, RpcFunctionEnum funcId, const std::vector<RpcValue>& args, std::chrono::milliseconds timeout = std::chrono::seconds(60));
 
     std::string pipe_name_;
     bool is_server_ = false;
@@ -269,6 +280,16 @@ RpcValue RpcSystem::_Call(RpcFunctionEnum funcId, Args... args) {
 }
 
 template<typename... Args>
+RpcValue RpcSystem::_CallWithTimeout(RpcFunctionEnum funcId, std::chrono::milliseconds timeout, Args... args) {
+    return this->_CallMethodWithTimeout(0, funcId, timeout, args...);
+}
+
+template<typename... Args>
 RpcValue RpcSystem::_CallMethod(RpcObjectId objId, RpcFunctionEnum funcId, Args... args) {
     return InternalCall(objId, funcId, {RpcValue(args)...});
+}
+
+template<typename... Args>
+RpcValue RpcSystem::_CallMethodWithTimeout(RpcObjectId objId, RpcFunctionEnum funcId, std::chrono::milliseconds timeout, Args... args) {
+    return InternalCall(objId, funcId, {RpcValue(args)...}, timeout);
 }

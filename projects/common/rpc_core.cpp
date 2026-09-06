@@ -539,7 +539,7 @@ RpcObject* RpcSystem::_FindOrCreateProxy(RpcObjectId id, RpcClassEnum classId) {
     throw std::runtime_error("Cannot create proxy: Class ID '" + std::to_string(classId) + "' is not registered.");
 }
 
-RpcValue RpcSystem::InternalCall(RpcObjectId objId, RpcFunctionEnum funcId, const std::vector<RpcValue>& args) {
+RpcValue RpcSystem::InternalCall(RpcObjectId objId, RpcFunctionEnum funcId, const std::vector<RpcValue>& args, std::chrono::milliseconds timeout) {
     if (!_IsConnected()) {
         throw std::runtime_error("RPC system is not connected.");
     }
@@ -577,7 +577,7 @@ RpcValue RpcSystem::InternalCall(RpcObjectId objId, RpcFunctionEnum funcId, cons
     SendRPCMessage(buffer);
     // Wait for the return value
     std::unique_lock<std::mutex> lock(pendingCall->mtx);
-    if (!pendingCall->cv.wait_for(lock, std::chrono::seconds(60), [&]{ return pendingCall->completed; })) {
+    if (!pendingCall->cv.wait_for(lock, timeout, [&]{ return pendingCall->completed; })) {
         {
             std::lock_guard<std::mutex> pc_lock(pending_calls_mutex_);
             pending_calls_.erase(callId);

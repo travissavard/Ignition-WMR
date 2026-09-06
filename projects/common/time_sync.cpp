@@ -3,6 +3,7 @@
 #include "rpc_enums.h"
 #include "time_c.h"
 
+#include <chrono>
 #include <iostream>
 
 #ifdef _WIN32
@@ -87,7 +88,7 @@ void TimeSync::SendSync() {
         memcpy(sync_buf.data() + sizeof(uint64_t), &linux_ns, sizeof(uint64_t));
         memcpy(sync_buf.data() + sizeof(uint64_t) * 2, &freq, sizeof(uint64_t));
 
-        RpcSystem::Call(RPCFunction_SyncTime, RpcValue(sync_buf.data(), sync_buf.size()));
+        RpcSystem::CallWithTimeout(RPCFunction_SyncTime, std::chrono::seconds(5), RpcValue(sync_buf.data(), sync_buf.size()));
     } catch (const std::exception& e) {
         std::cerr << "Failed to send sync: " << e.what() << std::endl;
     }
