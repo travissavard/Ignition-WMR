@@ -133,8 +133,6 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    RpcSystem::ConnectToExistingIPC();
-
     // Create the RPC wrapper for the real provider.
     g_pRpcProvider = new RpcServerTrackedDeviceProvider(pRealDeviceProvider);
 
@@ -144,6 +142,9 @@ int main(int argc, char *argv[]) {
         auto val = RpcValue(g_pRpcProvider);
         return val;
     });
+
+    // We're actually ready, all the stuff that the driver needs should be registered now.
+    RpcSystem::ConnectToExistingIPC();
 
     std::cout << "Ignition server running." << std::endl;
 
