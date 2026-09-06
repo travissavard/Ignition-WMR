@@ -16,3 +16,5 @@
 @ cdecl shared_memory_block_close_shm(ptr)
 @ cdecl shared_memory_block_destroy(ptr)
 @ cdecl shared_memory_block_get_pointer(ptr)
+
+@ cdecl ignition_bridge_get_linux_ticks()

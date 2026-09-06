@@ -20,6 +20,7 @@ add_library(ignition_common STATIC
     rpc_resources.cpp
     rpc_paths.cpp
     rpc_block_queue.cpp
+    time_sync.cpp
 )
 
 target_compile_definitions(ignition_common PUBLIC -DNOMINMAX)

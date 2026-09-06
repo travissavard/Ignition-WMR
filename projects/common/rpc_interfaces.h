@@ -358,6 +358,7 @@ public:
 
 private:
     vr::IVRPaths* real_paths_ = nullptr;
+    vr::PathHandle_t server_time_ticks_handle_ = 0;
 };
 
 // *********************************

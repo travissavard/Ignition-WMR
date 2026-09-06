@@ -2,6 +2,8 @@
 #include "wine_utils.h"
 #include "rpc_interfaces.h"
 #include "config.h"
+#include "time_sync.h"
+
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -146,12 +148,18 @@ int main(int argc, char *argv[]) {
     // We're actually ready, all the stuff that the driver needs should be registered now.
     RpcSystem::ConnectToExistingIPC();
 
+    TimeSync::InitializeServer();
+
     std::cout << "Ignition server running." << std::endl;
 
     while (true) {
         if (!RpcSystem::IsAlive()) {
             break;
         }
+
+        TimeSync::RecalibrateServer();
+        TimeSync::SendSync();
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 

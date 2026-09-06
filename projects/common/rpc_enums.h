@@ -27,6 +27,9 @@ enum RpcFunctionEnum : uint32_t
     // Static getter for IServerTrackedDeviceProvider
     RPCFunction_Get_ServerTrackedDeviceProvider,
 
+    // Time Synchronization
+    RPCFunction_SyncTime,
+
     // IServerTrackedDeviceProvider
     RPCFunction_ServerTrackedDeviceProvider_Init,
     RPCFunction_ServerTrackedDeviceProvider_Cleanup,

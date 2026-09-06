@@ -6,6 +6,7 @@ add_library(ignition_bridge_objs OBJECT
     mapped_event_circular_buffer.cpp
     mapped_event_circular_buffer_c.cpp
     shared_memory_block_c.cpp
+    time_c.cpp
 )
 
 target_compile_definitions(ignition_bridge_objs PUBLIC -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS)

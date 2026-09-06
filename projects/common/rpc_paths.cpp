@@ -1,8 +1,11 @@
 #include "openvr_driver.h"
 #include "rpc_interfaces.h"
+#include "time_sync.h"
+
 #include <algorithm>
-#include <vector>
+#include <cstring>
 #include <string>
+#include <vector>
 
 RpcPaths::RpcPaths(vr::IVRPaths* real) : RpcObject(), real_paths_(real) {
     if (!IsProxy()) {
@@ -204,9 +207,16 @@ vr::ETrackedPropertyError RpcPaths::StringToHandle(vr::PathHandle_t *pHandle, co
             if (pHandle) {
                 *pHandle = handle;
             }
+            if (pchPath && strcmp(pchPath, "/server_time_ticks") == 0) {
+                server_time_ticks_handle_ = handle;
+            }
             return err;
         } else {
-            return real_paths_->StringToHandle(pHandle, pchPath);
+            vr::ETrackedPropertyError err = real_paths_->StringToHandle(pHandle, pchPath);
+            if (err == vr::TrackedProp_Success && pchPath && strcmp(pchPath, "/server_time_ticks") == 0 && pHandle) {
+                server_time_ticks_handle_ = *pHandle;
+            }
+            return err;
         }
     };
 
@@ -394,6 +404,17 @@ vr::ETrackedPropertyError RpcPaths::WritePathBatch(vr::PropertyContainerHandle_t
 
             return overallError;
         } else {
+            // Fix up /server_time_ticks (converting QPC ticks to CLOCK_MONOTONIC_RAW nanoseconds)
+            for (uint32_t i = 0; i < unBatchEntryCount; ++i) {
+                bool is_server_time = (pBatch[i].ulPath != 0 && pBatch[i].ulPath == server_time_ticks_handle_) ||
+                                      (pBatch[i].pszPath != nullptr && strcmp(pBatch[i].pszPath, "/server_time_ticks") == 0);
+                if (is_server_time && pBatch[i].unTag == vr::k_unUint64PropertyTag && pBatch[i].unBufferSize == sizeof(uint64_t) && pBatch[i].pvBuffer) {
+                    uint64_t raw_val = 0;
+                    memcpy(&raw_val, pBatch[i].pvBuffer, sizeof(uint64_t));
+                    uint64_t fixed_val = TimeSync::QpcToLinuxTicks(raw_val);
+                    memcpy(pBatch[i].pvBuffer, &fixed_val, sizeof(uint64_t));
+                }
+            }
             return real_paths_->WritePathBatch(ulRootHandle, pBatch, unBatchEntryCount);
         }
     };

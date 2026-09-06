@@ -1,6 +1,7 @@
+#include "config.h"
 #include "driver.h"
 #include "rpc_interfaces.h"
-#include "config.h"
+#include "time_sync.h"
 
 #include <json.hpp>
 
@@ -175,6 +176,7 @@ void *HmdDriverFactory(const char *pInterfaceName, int *pReturnCode) {
         std::string pipe_name = "ignition_ipc_" + connection_str;
         RpcSystem::Initialize(pipe_name);
         RegisterRPCClasses();
+        TimeSync::InitializeDriver();
 
         // Create IPC, and then launch server (which will connect to the IPC we created)
         RpcSystem::CreateIPC();
