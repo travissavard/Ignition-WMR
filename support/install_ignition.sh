@@ -37,6 +37,12 @@ fi
 
 echo "Driver name: $DRIVER_NAME"
 
+WINDOWS_DRIVER_DLL="$DRIVER_DIR/bin/win64/driver_${DRIVER_NAME}.dll"
+if [ ! -f "$WINDOWS_DRIVER_DLL" ]; then
+    echo "Error: Windows SteamVR driver not found at $WINDOWS_DRIVER_DLL"
+    exit 1
+fi
+
 LINUX_BIN_DIR="$DRIVER_DIR/bin/linux64"
 mkdir -p "$LINUX_BIN_DIR"
 
@@ -51,11 +57,11 @@ if [ ! -f "$IGNITION_DRIVER_SO" ]; then
 fi
 
 # Oasis/WMR Linux support depends on a Wine/Proton runtime carrying WMR-specific
-# USB/HID changes. The Oasis preview depot supplies that runtime launcher as
-# bin/linux64/proton. Never replace it with Ignition's generic Proton helper.
-DRIVER_BASENAME=$(basename "$DRIVER_DIR")
+# USB/HID changes. Detect Oasis from its exact manifest driver name plus its
+# corresponding Windows driver artifact. Do not infer WMR from a directory name,
+# because install_ignition.sh is also used for arbitrary third-party drivers.
 IS_WMR_OASIS=0
-if [[ "${DRIVER_NAME,,}" == "oasis" || "${DRIVER_BASENAME,,}" == *"oasis"* ]]; then
+if [[ "${DRIVER_NAME,,}" == "oasis" && -f "$DRIVER_DIR/bin/win64/driver_oasis.dll" ]]; then
     IS_WMR_OASIS=1
     if [ ! -f "$LINUX_BIN_DIR/proton" ]; then
         echo "Error: Oasis/WMR detected, but $LINUX_BIN_DIR/proton is missing."
