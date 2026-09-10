@@ -82,12 +82,16 @@ EOL
 echo "Copying support files..."
 if [ "$IS_WMR_OASIS" -eq 0 ]; then
     cp "$SCRIPT_DIR/proton" "$LINUX_BIN_DIR/proton"
+    cp "$SCRIPT_DIR/wine_psvr2_hidraw.reg" "$LINUX_BIN_DIR/"
     chmod +x "$LINUX_BIN_DIR/proton"
+else
+    # Remove a stale PSVR2 registry helper from a previous generic install so
+    # the WMR runtime is not modified with device-specific PSVR2 settings.
+    rm -f "$LINUX_BIN_DIR/wine_psvr2_hidraw.reg"
 fi
 cp "$SCRIPT_DIR/launch_serverhelper.sh" "$LINUX_BIN_DIR/"
 cp "$SCRIPT_DIR/driver_install.sh" "$LINUX_BIN_DIR/"
 cp "$SCRIPT_DIR/driver_uninstall.sh" "$LINUX_BIN_DIR/"
-cp "$SCRIPT_DIR/wine_psvr2_hidraw.reg" "$LINUX_BIN_DIR/"
 chmod +x "$LINUX_BIN_DIR/launch_serverhelper.sh" "$LINUX_BIN_DIR/driver_install.sh" "$LINUX_BIN_DIR/driver_uninstall.sh"
 
 echo "Creating symbolic link for the driver..."
