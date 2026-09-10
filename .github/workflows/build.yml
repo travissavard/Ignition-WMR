@@ -53,7 +53,7 @@ jobs:
           $SUDO update-alternatives --install /usr/bin/llvm-rc llvm-rc /usr/bin/llvm-rc-22 100
           $SUDO update-alternatives --set llvm-rc /usr/bin/llvm-rc-22 || true
           $SUDO update-alternatives --install /usr/bin/llvm-ml llvm-ml /usr/bin/llvm-ml-22 100
-          $SUDO update-alternatives --set llvm-ml llvm-ml-22 || true
+          $SUDO update-alternatives --set llvm-ml /usr/bin/llvm-ml-22 || true
 
       - name: Install xwin
         uses: taiki-e/install-action@v2
