@@ -30,7 +30,11 @@ jobs:
           SUDO=""
           if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
           $SUDO apt-get update
-          $SUDO apt-get install -y cmake ninja-build wine64-tools libwine-dev || $SUDO apt-get install -y cmake ninja-build wine libwine-dev
+          $SUDO apt-get install -y cmake ninja-build jq wine64-tools libwine-dev || $SUDO apt-get install -y cmake ninja-build jq wine libwine-dev
+
+      - name: Test installer compatibility
+        run: |
+          bash tests/test_install_ignition.sh
 
       - name: Install LLVM / Clang 22
         run: |
