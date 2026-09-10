@@ -30,7 +30,11 @@ jobs:
           SUDO=""
           if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
           $SUDO apt-get update
-          $SUDO apt-get install -y cmake ninja-build wine64-tools libwine-dev || $SUDO apt-get install -y cmake ninja-build wine libwine-dev
+          $SUDO apt-get install -y cmake ninja-build jq wine64-tools libwine-dev || $SUDO apt-get install -y cmake ninja-build jq wine libwine-dev
+
+      - name: Test installer compatibility
+        run: |
+          bash tests/test_install_ignition.sh
 
       - name: Install LLVM / Clang 22
         run: |
@@ -49,7 +53,7 @@ jobs:
           $SUDO update-alternatives --install /usr/bin/llvm-rc llvm-rc /usr/bin/llvm-rc-22 100
           $SUDO update-alternatives --set llvm-rc /usr/bin/llvm-rc-22 || true
           $SUDO update-alternatives --install /usr/bin/llvm-ml llvm-ml /usr/bin/llvm-ml-22 100
-          $SUDO update-alternatives --set llvm-ml /usr/bin/llvm-ml-22 || true
+          $SUDO update-alternatives --set llvm-ml llvm-ml-22 || true
 
       - name: Install xwin
         uses: taiki-e/install-action@v2
