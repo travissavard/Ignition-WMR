@@ -35,6 +35,15 @@ test -f "$GENERIC/bin/linux64/wine_psvr2_hidraw.reg"
 test -L "$GENERIC/bin/linux64/driver_example.so"
 grep -q 'driver_example.dll' "$GENERIC/bin/linux64/ignition.json"
 
+# A generic driver must not be classified as Oasis merely because its directory
+# name contains the word "oasis".
+LOOKALIKE="$TMP_DIR/my-oasis-tools-driver"
+make_driver "$LOOKALIKE" "example2"
+"$PKG/install_ignition.sh" "$LOOKALIKE"
+grep -q 'generic-proton' "$LOOKALIKE/bin/linux64/proton"
+test -f "$LOOKALIKE/bin/linux64/wine_psvr2_hidraw.reg"
+test -L "$LOOKALIKE/bin/linux64/driver_example2.so"
+
 # Oasis must keep the WMR-specific runtime already supplied by its Linux depot
 # and must not receive the PSVR2-specific registry tweak.
 OASIS="$TMP_DIR/Oasis Driver for Windows Mixed Reality"
@@ -75,6 +84,16 @@ if "$PKG/install_ignition.sh" "$BAD_MANIFEST" >"$TMP_DIR/bad.out" 2>&1; then
     exit 1
 fi
 grep -q 'non-empty driver' "$TMP_DIR/bad.out"
+
+# Missing Windows driver artifacts should fail before creating a Linux shim.
+MISSING_DLL="$TMP_DIR/missing-dll"
+mkdir -p "$MISSING_DLL"
+printf '{"name":"missing"}\n' > "$MISSING_DLL/driver.vrdrivermanifest"
+if "$PKG/install_ignition.sh" "$MISSING_DLL" >"$TMP_DIR/missing.out" 2>&1; then
+    echo "FAIL: driver install unexpectedly succeeded without its Windows DLL" >&2
+    exit 1
+fi
+grep -q 'Windows SteamVR driver not found' "$TMP_DIR/missing.out"
 
 # Shell syntax is part of the regression gate.
 bash -n "$ROOT_DIR/support/install_ignition.sh"
